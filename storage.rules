@@ -1,0 +1,42 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper functions
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return isAuth() && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+
+    function isValidFileSize() {
+      return request.resource.size <= 5 * 1024 * 1024; // 5MB limit
+    }
+
+    function isValidFileType(contentType) {
+      return request.resource.contentType.matches(contentType);
+    }
+
+    // Rules for resume uploads
+    match /resumes/{userId}/{fileName} {
+      allow read: if isAuth() && (request.auth.uid == userId || hasRole('teacher') || hasRole('company'));
+      allow create, update: if isAuth() && request.auth.uid == userId && isValidFileSize() && isValidFileType('application/pdf');
+      allow delete: if isAuth() && request.auth.uid == userId;
+    }
+
+    // Rules for company logos
+    match /companyLogos/{companyId}/{fileName} {
+      allow read: if true;
+      allow create, update: if isAuth() && hasRole('company') && request.auth.uid == companyId && isValidFileSize() && isValidFileType('image/.*');
+      allow delete: if isAuth() && hasRole('company') && request.auth.uid == companyId;
+    }
+
+    // Rules for job listing attachments
+    match /jobAttachments/{jobId}/{fileName} {
+      allow read: if true;
+      allow create, update: if isAuth() && hasRole('company') && isValidFileSize();
+      allow delete: if isAuth() && hasRole('company') && firestore.get(/databases/(default)/documents/jobListings/$(jobId)).data.companyId == request.auth.uid;
+    }
+  }
+}
